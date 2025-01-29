@@ -1,22 +1,25 @@
 package main
 
 import (
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/app"
-	"fyne.io/fyne/v2/widget"
-	"github.com/creack/pty"
 	"os"
 	"os/exec"
 	"time"
+
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/widget"
+	"github.com/creack/pty"
 )
 
 func main() {
 	a := app.New()
 	w := a.NewWindow("goterm")
 
-	w.SetContent(widget.NewLabel("I am on goterm!"))
+	ui := widget.NewTextGrid()       // Create a new TextGrid
+	ui.SetText("I'm on a terminal!") // Set text to display
 
-	c := exec.Command("bin/bash")
+	c := exec.Command("/usr/bin/bash")
 	p, err := pty.Start(c)
 
 	if err != nil {
@@ -26,14 +29,36 @@ func main() {
 
 	defer c.Process.Kill()
 
-	p.Write([]byte("ls\r"))
-	time.Sleep(1 * time.Second)
-	b := make([]byte, 1024)
-	_, err = p.Read(b)
-	if err != nil {
-		fyne.LogError("Failed to read pty", err)
+	onTypedKey := func(e *fyne.KeyEvent) {
+		if e.Name == fyne.KeyEnter || e.Name == fyne.KeyReturn {
+			_, _ = p.Write([]byte{'\r'})
+		}
 	}
 
-	w.Resize(fyne.NewSize(420, 200))
+	onTypedRune := func(r rune) {
+		_, _ = p.WriteString(string(r))
+	}
+
+	w.Canvas().SetOnTypedKey(onTypedKey)
+	w.Canvas().SetOnTypedRune(onTypedRune)
+
+	go func() {
+		for {
+			time.Sleep(1 * time.Second)
+			b := make([]byte, 256)
+			_, err = p.Read(b)
+			if err != nil {
+				fyne.LogError("Failed to read pty", err)
+			}
+			w.SetContent(widget.NewLabel(string(b)))
+		}
+	}()
+
+	w.SetContent(
+		fyne.NewContainerWithLayout(
+			layout.NewGridWrapLayout(fyne.NewSize(420, 200)),
+			ui,
+		),
+	)
 	w.ShowAndRun()
 }
